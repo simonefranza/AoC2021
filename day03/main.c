@@ -88,6 +88,10 @@ int main() {
     }
   }
   printf("Life support rating %d\n", oxygen_last * CO2_last);
+
+  // Cleanup
+  free(oxygen_data);
+  free(CO2_data);
   fclose(fp);
   return 0;
 }
