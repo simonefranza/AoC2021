@@ -27,7 +27,7 @@ int main() {
   char *copy = (char *)calloc(sizeof(char), read_len + 1);
   memcpy(copy, str, read_len);
   char *token = strtok(copy, ",");
-  int *crabs = (int*)calloc(sizeof(int), sizeof(int)*ARR_SIZE);
+  int *crabs = (int*)calloc(sizeof(int), ARR_SIZE);
   size_t num_crabs = 0;
   size_t max_crabs = ARR_SIZE;
   int min_val = 999999;
