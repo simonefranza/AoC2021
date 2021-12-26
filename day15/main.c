@@ -14,28 +14,35 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "heap.h"
+
 #define FILENAME "input"
 #define WIDTH 100
 #define HEIGHT 100
-#define WIDTH_PT_2 WIDTH * 5
-#define HEIGHT_PT_2 HEIGHT * 5
+#define WIDTH_PT_2 (WIDTH * 5)
+#define HEIGHT_PT_2 (HEIGHT * 5)
 #define ZERO_VAL 48
-#define BIG_NUMBER 99999
+#define BIG_NUMBER 999999
 
 int *readInput();
-void performDijkstra(int *data, int width, int height);
+void performDijkstra(int *data, int width, int height, int enable_out);
 int *scaleData(int *data);
 void drawSteps(int *prev, int *data, int width, int height);
-int findNextIdx(int *dist, int *visited, int width, int height);
+void updateDist(Heap *heap, associated_data **handles, int *dist, int *data, 
+    int *prev, int to_set_idx, int curr_idx);
 
-int main() {
+int main(int argv, char *argc[]) {
+  int enable_out = 0;
+  // Enable output
+  if (argv == 2 && !strcmp(argc[1], "-v"))
+    enable_out = 1;
   // Part 1
   int *data = readInput();
-  performDijkstra(data, WIDTH, HEIGHT);
+  performDijkstra(data, WIDTH, HEIGHT, enable_out);
 
   // Part 2
   data = scaleData(data);
-  performDijkstra(data, WIDTH_PT_2, HEIGHT_PT_2);
+  performDijkstra(data, WIDTH_PT_2, HEIGHT_PT_2, enable_out);
 
   return 0;
 }
@@ -55,56 +62,46 @@ int *readInput() {
   fclose(fp);
   return data;
 }
-void performDijkstra(int *data, int width, int height) {
+void performDijkstra(int *data, int width, int height, int enable_out) {
   int *dist = calloc(sizeof(int), width * height);
-  int *visited = calloc(sizeof(int), width * height);
   int *prev = calloc(sizeof(int), width * height);
-  for (int i = 1; i < width * height; i++) {
-    dist[i] = BIG_NUMBER;
-    visited[i] = 0;
+  associated_data **handles = calloc(sizeof(associated_data*), width * height);
+  associated_data *ad = calloc(sizeof(associated_data), width * height);
+
+  for (int i = 0; i < width * height; i++) {
+    dist[i] = !i ? 0 : BIG_NUMBER;
+    ad[i].dist_ptr = dist + i;
+    ad[i].idx = i;
     prev[i] = -1;
   }
-  int idx;
-  while ((idx = findNextIdx(dist, visited, width, height)) != -1) {
+  Heap *heap = createHeapData(ad, width*height, MIN_HEAP);
+  for (int i = 0; i < width * height; i++) {
+    handles[heap->data[i]->idx] = heap->data[i];
+  }
+  int idx = pop(heap)->idx;
+  while (1) {
     int col = idx % width;
     int row = idx / width;
-    //printf("Idx %d col %d row %d\n", idx, col, row);
     // Right
-    if (col < width - 1) {
-      int new_dist = dist[row * width + col] + data[row * width + col + 1];
-      if (new_dist <= dist[row * width + col + 1]) {
-        dist[row * width + col + 1] = new_dist;
-        prev[row * width + col + 1] = row * width + col;
-      }
-    }
+    if ((idx % width) < width - 1)
+      updateDist(heap, handles, dist, data, prev, idx + 1, idx);
     // Bottom
-    if (row < height - 1) {
-      int new_dist = dist[row * width + col] + data[(row + 1) * width + col];
-      if (new_dist <= dist[(row + 1) * width + col]) {
-        dist[(row + 1) * width + col] = new_dist;
-        prev[(row + 1) * width + col] = row * width + col;
-      }
-    }
+    if (idx / width < height - 1)
+      updateDist(heap, handles, dist, data, prev, idx + width, idx);
     // Left
-    if (col) {
-      int new_dist = dist[row * width + col] + data[row * width + col - 1];
-      if (new_dist < dist[row * width + col - 1]) {
-        dist[row * width + col - 1] = new_dist;
-        prev[row * width + col - 1] = row * width + col;
-      }
-    }
+    if (idx % width)
+      updateDist(heap, handles, dist, data, prev, idx - 1, idx);
     // Top
-    if (row) {
-      int new_dist = dist[row * width + col] + data[(row - 1) * width + col];
-      if (new_dist < dist[(row - 1) * width + col]) {
-        dist[(row - 1) * width + col] = new_dist;
-        prev[(row - 1) * width + col] = row * width + col;
-      }
-    }
-    visited[row * width + col] = 1;
+    if (idx / width)
+      updateDist(heap, handles, dist, data, prev, idx - width, idx);
+
+    if(isEmpty(heap))
+      break;
+    idx = pop(heap)->idx;
   }
   printf("Total to reach last tile %d\n", dist[width * height - 1]);
-  drawSteps(prev, data, width, height);
+  if(enable_out)
+    drawSteps(prev, data, width, height);
 }
 
 int *scaleData(int *data) {
@@ -133,12 +130,15 @@ void drawSteps(int *prev, int *data, int width, int height) {
     idx = prev[idx];
   }
   idxs[pos] = 0;
+  int *map = calloc(sizeof(int), width * height);
+  for(int i = 0; i < pos + 1;i++) {
+    map[idxs[i]] = 1;
+  }
   for (int row = 0; row < height; row++) {
     for (int col = 0; col < width; col++) {
-      if (row * width + col == idxs[pos]) {
+      if (map[row*width + col]) {
         printf("\x1b[38;2;0;0;0m\x1b[48;2;255;255;255m%d\x1b[0m",
                data[row * width + col]);
-        pos--;
       } else {
         printf("%d", data[row * width + col]);
       }
@@ -147,18 +147,12 @@ void drawSteps(int *prev, int *data, int width, int height) {
   }
 }
 
-int findNextIdx(int *dist, int *visited, int width, int height) {
-  int min = BIG_NUMBER;
-  int arg_min = -1;
-  for (int row = 0; row < height; row++) {
-    for (int col = 0; col < width; col++) {
-      if (visited[row * width + col])
-        continue;
-      if (dist[row * width + col] < min) {
-        min = dist[row * width + col];
-        arg_min = row * width + col;
-      }
-    }
+void updateDist(Heap *heap, associated_data **handles, int *dist, int *data, 
+    int *prev, int to_set_idx, int curr_idx) {
+  int new_dist = dist[curr_idx] + data[to_set_idx];
+  if (new_dist <= dist[to_set_idx]) {
+    dist[to_set_idx] = new_dist;
+    siftUp(heap->data, 0, handles[to_set_idx]->heap_idx, heap->type);
+    prev[to_set_idx] = curr_idx;
   }
-  return arg_min;
 }
